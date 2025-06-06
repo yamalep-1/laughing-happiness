@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мой Уютный Дневник Заметок</title>
+    <!-- Подключаем Tailwind CSS для красивого дизайна -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Используем приятный шрифт "Inter" для всего текста */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Легкий серый фон, чтобы глаза отдыхали */
+        }
+        /* Чуть-чуть магии для скроллбара, чтобы он выглядел аккуратно */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e0e0e0;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center py-8 px-4">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-2xl border border-gray-200">
+        <h1 class="text-4xl font-bold text-gray-800 mb-8 text-center">Ваши Заметки</h1>
+
+        <!-- Место для ввода новой заметки и кнопка "Добавить" -->
+        <div class="flex flex-col sm:flex-row gap-4 mb-8">
+            <textarea
+                id="noteInput"
+                class="flex-grow p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200 resize-y min-h-[60px]"
+                placeholder="Что у вас на уме? Напишите здесь..."
+                rows="3"
+            ></textarea>
+            <button
+                id="addNoteBtn"
+                class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105"
+            >
+                Добавить заметку
+            </button>
+        </div>
+
+        <!-- Здесь будут отображаться все ваши заметки -->
+        <div id="notesContainer" class="space-y-4">
+            <!-- Заметки появятся здесь, когда вы их добавите -->
+        </div>
+    </div>
+
+    <script>
+        // Находим нужные элементы на странице
+        const noteInput = document.getElementById('noteInput');
+        const addNoteBtn = document.getElementById('addNoteBtn');
+        const notesContainer = document.getElementById('notesContainer');
+
+        // Это ключ, по которому мы будем хранить заметки в памяти вашего браузера (localStorage)
+        const STORAGE_KEY = 'mySuperNotesApp';
+
+        /**
+         * Загружаем все заметки из localStorage.
+         * Если их нет, возвращаем пустой список.
+         */
+        function loadNotes() {
+            try {
+                const notesJSON = localStorage.getItem(STORAGE_KEY);
+                return notesJSON ? JSON.parse(notesJSON) : [];
+            } catch (e) {
+                console.error("Ой! Не удалось загрузить заметки из хранилища:", e);
+                return [];
+            }
+        }
+
+        /**
+         * Сохраняем текущий список заметок в localStorage.
+         */
+        function saveNotes(notes) {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+            } catch (e) {
+                console.error("Ой! Не удалось сохранить заметки:", e);
+            }
+        }
+
+        /**
+         * Отображаем все заметки на странице.
+         * Сначала очищаем старые, потом рисуем новые.
+         */
+        function renderNotes() {
+            notesContainer.innerHTML = ''; // Убираем все старые заметки, чтобы нарисовать свежие
+            const notes = loadNotes();
+
+            // Если заметок пока нет, покажем об этом сообщение
+            if (notes.length === 0) {
+                notesContainer.innerHTML = '<p class="text-center text-gray-500 py-4">Здесь пока тихо... Добавьте свою первую заметку!</p>';
+                return;
+            }
+
+            // Проходимся по каждой заметке и создаем для нее элемент на странице
+            notes.forEach(note => {
+                const noteElement = document.createElement('div');
+                noteElement.classList.add(
+                    'note-item',
+                    'bg-gray-50',
+                    'p-4',
+                    'rounded-lg',
+                    'shadow-sm',
+                    'flex',
+                    'flex-col',
+                    'border',
+                    'border-gray-200'
+                );
+                noteElement.dataset.id = note.id; // Присваиваем заметке уникальный ID для работы с ней
+
+                // Текст самой заметки
+                const noteTextElement = document.createElement('p');
+                noteTextElement.classList.add('note-text', 'text-gray-700', 'flex-grow', 'mb-3', 'cursor-pointer');
+                noteTextElement.textContent = note.content;
+
+                // Дата и время создания/последнего редактирования заметки
+                const noteDateElement = document.createElement('span');
+                noteDateElement.classList.add('text-xs', 'text-gray-400', 'mt-2', 'text-right');
+                noteDateElement.textContent = new Date(note.timestamp).toLocaleString();
+
+                // Контейнер для кнопок "Изменить" и "Удалить"
+                const buttonContainer = document.createElement('div');
+                buttonContainer.classList.add('flex', 'justify-end', 'gap-2', 'mt-4');
+
+                // Кнопка "Изменить"
+                const editBtn = document.createElement('button');
+                editBtn.classList.add(
+                    'bg-yellow-500',
+                    'hover:bg-yellow-600',
+                    'text-white',
+                    'px-3',
+                    'py-1',
+                    'rounded-md',
+                    'text-sm',
+                    'font-medium',
+                    'transition',
+                    'duration-200'
+                );
+                editBtn.textContent = 'Изменить';
+                editBtn.addEventListener('click', () => editNote(note.id)); // При клике вызываем функцию редактирования
+
+                // Кнопка "Удалить"
+                const deleteBtn = document.createElement('button');
+                deleteBtn.classList.add(
+                    'bg-red-500',
+                    'hover:bg-red-600',
+                    'text-white',
+                    'px-3',
+                    'py-1',
+                    'rounded-md',
+                    'text-sm',
+                    'font-medium',
+                    'transition',
+                    'duration-200'
+                );
+                deleteBtn.textContent = 'Удалить';
+                deleteBtn.addEventListener('click', () => deleteNote(note.id)); // При клике вызываем функцию удаления
+
+                // Добавляем кнопки в контейнер
+                buttonContainer.appendChild(editBtn);
+                buttonContainer.appendChild(deleteBtn);
+
+                // Собираем все части заметки воедино
+                noteElement.appendChild(noteTextElement);
+                noteElement.appendChild(noteDateElement);
+                noteElement.appendChild(buttonContainer);
+
+                // Добавляем готовую заметку на страницу
+                notesContainer.appendChild(noteElement);
+            });
+        }
+
+        /**
+         * Добавляем новую заметку в наш список.
+         */
+        function addNote() {
+            const content = noteInput.value.trim(); // Берем текст из поля ввода, убирая пробелы по краям
+            if (content === '') {
+                // Если заметка пустая, вежливо просим что-нибудь ввести
+                alert('Кажется, вы забыли ввести текст заметки! Пожалуйста, напишите что-нибудь.');
+                return;
+            }
+
+            const notes = loadNotes();
+            const newNote = {
+                id: Date.now(), // Уникальный ID на основе текущего времени (просто и удобно!)
+                content: content,
+                timestamp: new Date().toISOString() // Записываем, когда заметка была создана
+            };
+            notes.unshift(newNote); // Добавляем новую заметку в самое начало списка
+            saveNotes(notes); // Сохраняем обновленный список
+            noteInput.value = ''; // Очищаем поле ввода, чтобы можно было писать новую заметку
+            renderNotes(); // Перерисовываем список заметок, чтобы увидеть новую
+        }
+
+        /**
+         * Удаляем заметку по ее уникальному ID.
+         * Спрашиваем подтверждение, чтобы случайно ничего не удалить.
+         */
+        function deleteNote(id) {
+            if (!confirm('Вы уверены? Заметка будет удалена безвозвратно!')) {
+                return;
+            }
+            let notes = loadNotes();
+            // Отфильтровываем заметку, которую нужно удалить
+            notes = notes.filter(note => note.id !== id);
+            saveNotes(notes); // Сохраняем обновленный список
+            renderNotes(); // Обновляем отображение
+        }
+
+        /**
+         * Редактируем текст существующей заметки.
+         * Сейчас используется простое окошко для ввода.
+         */
+        function editNote(id) {
+            let notes = loadNotes();
+            const noteToEdit = notes.find(note => note.id === id); // Находим заметку по ID
+
+            if (noteToEdit) {
+                const updatedContent = prompt('Измените свою заметку:', noteToEdit.content);
+                // Если пользователь что-то ввел и не отменил, обновляем заметку
+                if (updatedContent !== null && updatedContent.trim() !== '') {
+                    noteToEdit.content = updatedContent.trim();
+                    noteToEdit.timestamp = new Date().toISOString(); // Обновляем дату редактирования
+                    saveNotes(notes);
+                    renderNotes();
+                } else if (updatedContent !== null) {
+                    alert('Ой! Заметка не может быть пустой. Пожалуйста, введите текст.');
+                }
+            }
+        }
+
+        // Слушаем нажатия на кнопку "Добавить заметку"
+        addNoteBtn.addEventListener('click', addNote);
+        // Слушаем нажатия клавиш в поле ввода заметки
+        noteInput.addEventListener('keypress', (event) => {
+            // Если нажали Enter и не держали Shift, добавляем заметку
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault(); // Останавливаем перенос строки в поле
+                addNote();
+            }
+        });
+
+        // Когда страница полностью загрузится, сразу же покажем все заметки
+        window.onload = renderNotes;
+
+    </script>
+</body>
+</html>
