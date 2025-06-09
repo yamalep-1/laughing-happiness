@@ -1,0 +1,241 @@
+const API_BASE_URL = 'http://localhost:3000/api';
+
+let currentUserId = localStorage.getItem('currentUserId');
+if (!currentUserId) {
+    currentUserId = 'user_' + Date.now();
+    localStorage.setItem('currentUserId', currentUserId);
+}
+
+const noteInput = document.getElementById('noteInput');
+const addNoteBtn = document.getElementById('addNoteBtn');
+const notesContainer = document.getElementById('notesContainer');
+const userIdDisplay = document.getElementById('userIdDisplay').querySelector('span');
+userIdDisplay.textContent = currentUserId;
+
+const messageModal = document.getElementById('messageModal');
+const modalTitle = document.getElementById('modalTitle');
+const modalMessage = document.getElementById('modalMessage');
+const modalButtons = document.getElementById('modalButtons');
+const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+const modalCancelBtn = document.getElementById('modalCancelBtn');
+const modalCloseBtn = document.getElementById('modalCloseBtn');
+
+function showModal(title, message, isConfirm = false) {
+    return new Promise((resolve) => {
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+
+        modalConfirmBtn.classList.add('hidden');
+        modalCancelBtn.classList.add('hidden');
+        modalCloseBtn.classList.add('hidden');
+
+        if (isConfirm) {
+            modalConfirmBtn.textContent = 'ОК';
+            modalConfirmBtn.classList.remove('hidden');
+            modalCancelBtn.classList.remove('hidden');
+            modalConfirmBtn.onclick = () => {
+                messageModal.classList.add('hidden');
+                resolve(true);
+            };
+            modalCancelBtn.onclick = () => {
+                messageModal.classList.add('hidden');
+                resolve(false);
+            };
+        } else {
+            modalCloseBtn.textContent = 'Закрыть';
+            modalCloseBtn.classList.remove('hidden');
+            modalCloseBtn.onclick = () => {
+                messageModal.classList.add('hidden');
+                resolve(true);
+            };
+        }
+        messageModal.classList.remove('hidden');
+    });
+}
+
+async function loadNotes() {
+    try {
+        notesContainer.innerHTML = '<p class="text-center text-gray-500 py-4">Загрузка заметок...</p>';
+        const response = await fetch(`${API_BASE_URL}/notes`);
+        if (!response.ok) {
+            throw new Error(`Ошибка HTTP: ${response.status}`);
+        }
+        const notes = await response.json();
+        renderNotes(notes);
+    } catch (error) {
+        console.error("Ошибка при загрузке заметок:", error);
+        notesContainer.innerHTML = '<p class="text-center text-red-500 py-4">Ошибка загрузки заметок. Пожалуйста, убедитесь, что Node.js бэкенд запущен и PostgreSQL настроен.</p>';
+        showModal('Ошибка', 'Не удалось загрузить заметки. Проверьте, запущен ли бэкенд сервер (Node.js) и настроена ли база данных PostgreSQL.');
+    }
+}
+
+function renderNotes(notes) {
+    notesContainer.innerHTML = '';
+
+    if (notes.length === 0) {
+        notesContainer.innerHTML = '<p class="text-center text-gray-500 py-4">Здесь пока тихо... Добавьте свою первую заметку!</p>';
+        return;
+    }
+
+    notes.forEach(note => {
+        const noteElement = document.createElement('div');
+        noteElement.classList.add(
+            'note-item',
+            'bg-gray-50',
+            'p-4',
+            'rounded-lg',
+            'shadow-sm',
+            'flex',
+            'flex-col',
+            'border',
+            'border-gray-200'
+        );
+        noteElement.dataset.id = note.id;
+
+        const noteTextElement = document.createElement('p');
+        noteTextElement.classList.add('note-text', 'text-gray-700', 'flex-grow', 'mb-3', 'cursor-pointer');
+        noteTextElement.textContent = note.content;
+
+        const noteUserIdElement = document.createElement('span');
+        noteUserIdElement.classList.add('text-xs', 'text-gray-500', 'mt-1', 'text-left');
+        noteUserIdElement.textContent = `От пользователя: ${note.user_id}`;
+
+        const noteDateElement = document.createElement('span');
+        noteDateElement.classList.add('text-xs', 'text-gray-400', 'mt-2', 'text-right');
+        noteDateElement.textContent = note.created_at ? new Date(note.created_at).toLocaleString() : 'Дата неизвестна';
+
+        const buttonContainer = document.createElement('div');
+        buttonContainer.classList.add('flex', 'justify-end', 'gap-2', 'mt-4');
+
+        const editBtn = document.createElement('button');
+        editBtn.classList.add(
+            'bg-yellow-500',
+            'hover:bg-yellow-600',
+            'text-white',
+            'px-3',
+            'py-1',
+            'rounded-md',
+            'text-sm',
+            'font-medium',
+            'transition',
+            'duration-200'
+        );
+        editBtn.textContent = 'Изменить';
+        editBtn.addEventListener('click', () => editNote(note.id, note.content));
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.classList.add(
+            'bg-red-500',
+            'hover:bg-red-600',
+            'text-white',
+            'px-3',
+            'py-1',
+            'rounded-md',
+            'text-sm',
+            'font-medium',
+            'transition',
+            'duration-200'
+        );
+        deleteBtn.textContent = 'Удалить';
+        deleteBtn.addEventListener('click', () => deleteNote(note.id));
+
+        buttonContainer.appendChild(editBtn);
+        buttonContainer.appendChild(deleteBtn);
+
+        noteElement.appendChild(noteTextElement);
+        noteElement.appendChild(noteUserIdElement);
+        noteElement.appendChild(noteDateElement);
+        noteElement.appendChild(buttonContainer);
+
+        notesContainer.appendChild(noteElement);
+    });
+}
+
+async function addNote() {
+    const content = noteInput.value.trim();
+    if (content === '') {
+        showModal('Внимание', 'Кажется, вы забыли ввести текст заметки! Пожалуйста, напишите что-нибудь.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/notes`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userId: currentUserId, content: content }),
+        });
+        if (!response.ok) {
+            throw new Error(`Ошибка HTTP: ${response.status}`);
+        }
+        noteInput.value = '';
+        await loadNotes();
+        showModal('Успех', 'Заметка успешно добавлена!');
+    } catch (error) {
+        console.error("Ошибка при добавлении заметки:", error);
+        showModal('Ошибка', 'Ой! Не удалось добавить заметку. Пожалуйста, попробуйте снова.');
+    }
+}
+
+async function deleteNote(id) {
+    const confirmed = await showModal('Подтверждение', 'Вы уверены? Заметка будет удалена безвозвратно!', true);
+    if (!confirmed) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/notes/${id}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok) {
+            throw new Error(`Ошибка HTTP: ${response.status}`);
+        }
+        await loadNotes();
+        showModal('Успех', 'Заметка успешно удалена!');
+    }
+    catch (error) {
+        console.error("Ошибка при удалении заметки:", error);
+        showModal('Ошибка', 'Ой! Не удалось удалить заметку. Пожалуйста, попробуйте снова.');
+    }
+}
+
+async function editNote(id, currentContent) {
+    const updatedContent = prompt('Измените свою заметку:', currentContent);
+
+    if (updatedContent === null) {
+        return;
+    }
+    if (updatedContent.trim() === '') {
+        showModal('Внимание', 'Ой! Заметка не может быть пустой. Пожалуйста, введите текст.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/notes/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ content: updatedContent.trim() }),
+        });
+        if (!response.ok) {
+            throw new Error(`Ошибка HTTP: ${response.status}`);
+        }
+        await loadNotes();
+        showModal('Успех', 'Заметка успешно обновлена!');
+    } catch (error) {
+        console.error("Ошибка при обновлении заметки:", error);
+        showModal('Ошибка', 'Ой! Не удалось обновить заметку. Пожалуйста, попробуйте снова.');
+    }
+}
+
+addNoteBtn.addEventListener('click', addNote);
+noteInput.addEventListener('keypress', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        addNote();
+    }
+});
+
+window.onload = loadNotes;
