@@ -1,21 +1,16 @@
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_ROOT_URL = 'http://127.0.0.1:8000';
+const API_NOTES_URL = `${API_ROOT_URL}/api/notes/`;
 
-let currentUserId = localStorage.getItem('currentUserId');
-if (!currentUserId) {
-    currentUserId = 'user_' + Date.now();
-    localStorage.setItem('currentUserId', currentUserId);
-}
+let authToken = localStorage.getItem('authToken');
 
 const noteInput = document.getElementById('noteInput');
 const addNoteBtn = document.getElementById('addNoteBtn');
 const notesContainer = document.getElementById('notesContainer');
 const userIdDisplay = document.getElementById('userIdDisplay').querySelector('span');
-userIdDisplay.textContent = currentUserId;
 
 const messageModal = document.getElementById('messageModal');
 const modalTitle = document.getElementById('modalTitle');
 const modalMessage = document.getElementById('modalMessage');
-const modalButtons = document.getElementById('modalButtons');
 const modalConfirmBtn = document.getElementById('modalConfirmBtn');
 const modalCancelBtn = document.getElementById('modalCancelBtn');
 const modalCloseBtn = document.getElementById('modalCloseBtn');
@@ -53,19 +48,95 @@ function showModal(title, message, isConfirm = false) {
     });
 }
 
+function getAuthHeaders() {
+    if (!authToken) {
+        return {};
+    }
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': `Token ${authToken}`
+    };
+}
+
+// ----------------------------------------------------
+// НОВАЯ ЛОГИКА АУТЕНТИФИКАЦИИ
+// ----------------------------------------------------
+
+async function authenticateUser() {
+    if (authToken) {
+        // Если токен уже есть, пробуем загрузить заметки
+        await loadNotes();
+        return;
+    }
+
+    const username = prompt('Введите имя пользователя (должно быть создано в Django Admin):');
+    const password = prompt('Введите пароль:');
+    
+    if (!username || !password) {
+        showModal('Ошибка входа', 'Для продолжения необходимо ввести логин и пароль.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_ROOT_URL}/auth/token/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ username, password }),
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            authToken = data.token;
+            localStorage.setItem('authToken', authToken);
+            userIdDisplay.textContent = username; // Используем имя пользователя для отображения
+            showModal('Успешный вход', `Вы вошли как ${username}. Заметки загружаются.`);
+            await loadNotes();
+        } else {
+            throw new Error('Неверный логин или пароль');
+        }
+
+    } catch (error) {
+        console.error("Ошибка аутентификации:", error);
+        showModal('Ошибка входа', 'Не удалось войти. Убедитесь, что логин и пароль верны и вы создали пользователя в Django Admin.');
+        // Сброс токена и повторная попытка
+        authToken = null;
+        localStorage.removeItem('authToken');
+        userIdDisplay.textContent = 'Не выполнен';
+        notesContainer.innerHTML = '<p class="text-center text-red-500 py-4">Требуется вход в систему. Обновите страницу и введите данные.</p>';
+    }
+}
+
+// ----------------------------------------------------
+// API-ФУНКЦИИ (Обновлены для использования Токена)
+// ----------------------------------------------------
+
 async function loadNotes() {
+    if (!authToken) {
+        notesContainer.innerHTML = '<p class="text-center text-red-500 py-4">Необходимо войти в систему для загрузки заметок.</p>';
+        return;
+    }
     try {
         notesContainer.innerHTML = '<p class="text-center text-gray-500 py-4">Загрузка заметок...</p>';
-        const response = await fetch(`${API_BASE_URL}/notes`);
+        const response = await fetch(API_NOTES_URL, {
+            headers: getAuthHeaders()
+        });
         if (!response.ok) {
+            // Если токен недействителен, запрашиваем повторный вход
+            if (response.status === 401) {
+                authToken = null;
+                localStorage.removeItem('authToken');
+                return authenticateUser();
+            }
             throw new Error(`Ошибка HTTP: ${response.status}`);
         }
         const notes = await response.json();
         renderNotes(notes);
     } catch (error) {
         console.error("Ошибка при загрузке заметок:", error);
-        notesContainer.innerHTML = '<p class="text-center text-red-500 py-4">Ошибка загрузки заметок. Пожалуйста, убедитесь, что Node.js бэкенд запущен и PostgreSQL настроен.</p>';
-        showModal('Ошибка', 'Не удалось загрузить заметки. Проверьте, запущен ли бэкенд сервер (Node.js) и настроена ли база данных PostgreSQL.');
+        notesContainer.innerHTML = '<p class="text-center text-red-500 py-4">Ошибка загрузки заметок. Проверьте, запущен ли Django-сервер.</p>';
+        showModal('Ошибка', 'Не удалось загрузить заметки. Проверьте, запущен ли Django-сервер.');
     }
 }
 
@@ -98,12 +169,22 @@ function renderNotes(notes) {
 
         const noteUserIdElement = document.createElement('span');
         noteUserIdElement.classList.add('text-xs', 'text-gray-500', 'mt-1', 'text-left');
-        noteUserIdElement.textContent = `От пользователя: ${note.user_id}`;
+        noteUserIdElement.textContent = `От пользователя ID: ${note.user}`; // Отображаем ID пользователя из Django
 
         const noteDateElement = document.createElement('span');
         noteDateElement.classList.add('text-xs', 'text-gray-400', 'mt-2', 'text-right');
         noteDateElement.textContent = note.created_at ? new Date(note.created_at).toLocaleString() : 'Дата неизвестна';
 
+        // Отображение дополнительной информации (для демонстрации связей)
+        const detailsElement = document.createElement('div');
+        detailsElement.classList.add('text-xs', 'mt-2', 'p-2', 'bg-blue-100', 'rounded');
+        if (note.details && note.details.is_important) {
+            detailsElement.innerHTML += `<span class="font-bold text-blue-800">Важно: ДА</span>, Приоритет: ${note.details.priority_level}. `;
+        }
+        if (note.tags && note.tags.length > 0) {
+             detailsElement.innerHTML += `Теги: ${note.tags.map(t => t.name).join(', ')}`;
+        }
+        
         const buttonContainer = document.createElement('div');
         buttonContainer.classList.add('flex', 'justify-end', 'gap-2', 'mt-4');
 
@@ -144,6 +225,7 @@ function renderNotes(notes) {
 
         noteElement.appendChild(noteTextElement);
         noteElement.appendChild(noteUserIdElement);
+        noteElement.appendChild(detailsElement);
         noteElement.appendChild(noteDateElement);
         noteElement.appendChild(buttonContainer);
 
@@ -152,19 +234,21 @@ function renderNotes(notes) {
 }
 
 async function addNote() {
+    if (!authToken) {
+        showModal('Внимание', 'Сначала выполните вход в систему, пожалуйста.');
+        return;
+    }
     const content = noteInput.value.trim();
     if (content === '') {
-        showModal('Внимание', 'Кажется, вы забыли ввести текст заметки! Пожалуйста, напишите что-нибудь.');
+        showModal('Внимание', 'Кажется, вы забыли ввести текст заметки!');
         return;
     }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/notes`, {
+        const response = await fetch(API_NOTES_URL, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ userId: currentUserId, content: content }),
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ content: content }),
         });
         if (!response.ok) {
             throw new Error(`Ошибка HTTP: ${response.status}`);
@@ -174,21 +258,25 @@ async function addNote() {
         showModal('Успех', 'Заметка успешно добавлена!');
     } catch (error) {
         console.error("Ошибка при добавлении заметки:", error);
-        showModal('Ошибка', 'Ой! Не удалось добавить заметку. Пожалуйста, попробуйте снова.');
+        showModal('Ошибка', 'Ой! Не удалось добавить заметку. Возможно, ваш токен устарел или сервер недоступен.');
     }
 }
 
 async function deleteNote(id) {
+    if (!authToken) return;
+
     const confirmed = await showModal('Подтверждение', 'Вы уверены? Заметка будет удалена безвозвратно!', true);
-    if (!confirmed) {
-        return;
-    }
+    if (!confirmed) return;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/notes/${id}`, {
+        const response = await fetch(`${API_NOTES_URL}${id}/`, {
             method: 'DELETE',
+            headers: getAuthHeaders(),
         });
-        if (!response.ok) {
+        if (response.status === 404) {
+             throw new Error('Заметка не найдена или у вас нет прав на её удаление.');
+        }
+        if (!response.ok && response.status !== 204) { // 204 No Content - успешное удаление
             throw new Error(`Ошибка HTTP: ${response.status}`);
         }
         await loadNotes();
@@ -196,27 +284,25 @@ async function deleteNote(id) {
     }
     catch (error) {
         console.error("Ошибка при удалении заметки:", error);
-        showModal('Ошибка', 'Ой! Не удалось удалить заметку. Пожалуйста, попробуйте снова.');
+        showModal('Ошибка', `Не удалось удалить заметку. ${error.message}`);
     }
 }
 
 async function editNote(id, currentContent) {
+    if (!authToken) return;
+
     const updatedContent = prompt('Измените свою заметку:', currentContent);
 
-    if (updatedContent === null) {
-        return;
-    }
+    if (updatedContent === null) return;
     if (updatedContent.trim() === '') {
-        showModal('Внимание', 'Ой! Заметка не может быть пустой. Пожалуйста, введите текст.');
+        showModal('Внимание', 'Ой! Заметка не может быть пустой.');
         return;
     }
 
     try {
-        const response = await fetch(`${API_BASE_URL}/notes/${id}`, {
+        const response = await fetch(`${API_NOTES_URL}${id}/`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ content: updatedContent.trim() }),
         });
         if (!response.ok) {
@@ -226,7 +312,7 @@ async function editNote(id, currentContent) {
         showModal('Успех', 'Заметка успешно обновлена!');
     } catch (error) {
         console.error("Ошибка при обновлении заметки:", error);
-        showModal('Ошибка', 'Ой! Не удалось обновить заметку. Пожалуйста, попробуйте снова.');
+        showModal('Ошибка', 'Не удалось обновить заметку. Возможно, у вас нет прав.');
     }
 }
 
@@ -238,4 +324,5 @@ noteInput.addEventListener('keypress', (event) => {
     }
 });
 
-window.onload = loadNotes;
+// Запуск аутентификации при загрузке страницы
+window.onload = authenticateUser;
