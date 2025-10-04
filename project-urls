@@ -1,0 +1,11 @@
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    # Путь для доступа к встроенной админ-панели Django
+    path('admin/', admin.site.urls),
+    
+    # Все пути для нашего API будут начинаться с /api/, 
+    # а логика будет браться из notes_app/urls.py
+    path('api/', include('notes_app.urls')), 
+]
