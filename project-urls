@@ -9,3 +9,17 @@ urlpatterns = [
     # а логика будет браться из notes_app/urls.py
     path('api/', include('notes_app.urls')), 
 ]
+
+from django.contrib import admin
+from django.urls import path, include
+from rest_framework.authtoken import views # Добавляем импорт
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    # Эндпоинт для получения токена (логина): 
+    # POST-запрос на /auth/token/ с username и password
+    path('auth/token/', views.obtain_auth_token),
+    
+    # Все пути для нашего API
+    path('api/', include('notes_app.urls')), 
+]
