@@ -1,0 +1,39 @@
+from django.db import models
+from django.contrib.auth.models import User
+
+class Tag(models.Model):
+    name = models.CharField(max_length=50, unique=True, verbose_name="Название тега")
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Тег"
+        verbose_name_plural = "Теги"
+
+class Note(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Пользователь")
+    content = models.TextField(verbose_name="Содержимое заметки")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата создания")
+    
+    tags = models.ManyToManyField(Tag, related_name='notes', verbose_name="Теги")
+
+    def __str__(self):
+        return f"Заметка от {self.user.username}: {self.content[:50]}..."
+
+    class Meta:
+        verbose_name = "Заметка"
+        verbose_name_plural = "Заметки"
+        ordering = ['-created_at']
+
+class NoteDetails(models.Model):
+    note = models.OneToOneField(Note, on_delete=models.CASCADE, primary_key=True, related_name='details', verbose_name="Заметка")
+    is_important = models.BooleanField(default=False, verbose_name="Важно")
+    priority_level = models.IntegerField(default=1, verbose_name="Уровень приоритета")
+
+    def __str__(self):
+        return f"Детализация для {self.note.content[:30]}"
+
+    class Meta:
+        verbose_name = "Детализация заметки"
+        verbose_name_plural = "Детализация заметок"
